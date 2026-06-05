@@ -1,0 +1,13 @@
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\obj\Debug\net48\MonitorTEF.csproj.AssemblyReference.cache
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\obj\Debug\net48\MonitorTEF.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\obj\Debug\net48\MonitorTEF.AssemblyInfoInputs.cache
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\obj\Debug\net48\MonitorTEF.AssemblyInfo.cs
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\obj\Debug\net48\MonitorTEF.csproj.CoreCompileInputs.cache
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\obj\Debug\net48\MonitorTEF.sourcelink.json
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\bin\Debug\net48\MonitorTEF.exe.config
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\bin\Debug\net48\MonitorTEF.exe
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\bin\Debug\net48\MonitorTEF.pdb
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\bin\Debug\net48\System.Data.SqlClient.dll
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\obj\Debug\net48\MonitorTEF.csproj.Up2Date
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\obj\Debug\net48\MonitorTEF.exe
+C:\Users\rafael.souza\Desktop\BC - Rafael\Projects\Projects\monitorTEF\obj\Debug\net48\MonitorTEF.pdb

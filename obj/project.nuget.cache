@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "INVkw84XqaM=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\rafael.souza\\Desktop\\BC - Rafael\\Projects\\Projects\\monitorTEF\\MonitorTEF.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\rafael.souza\\.nuget\\packages\\system.data.sqlclient\\4.8.6\\system.data.sqlclient.4.8.6.nupkg.sha512"
+  ],
+  "logs": []
+}
