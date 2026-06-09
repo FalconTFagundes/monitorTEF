@@ -7,7 +7,7 @@ namespace MonitorTEF
 {
     public class FormPrincipal : Form
     {
-        // ── controles principais ──────────────────────────────────────────
+        // ── controles ─────────────────────────────────────────────────────
         private Panel         _painelTopo;
         private Label         _lblTitulo;
         private Label         _lblStatus;
@@ -15,22 +15,25 @@ namespace MonitorTEF
         private Button        _btnAtualizar;
         private DataGridView  _grid;
         private Panel         _painelRodape;
-        private Label         _lblAlertaConfig;
-        private NumericUpDown _nudAlertaMinutos;
-        private Label         _lblIntervaloConfig;
-        private NumericUpDown _nudIntervaloSegundos;
+
+        // config global
+        private NumericUpDown _nudPeriodoHoras;
+        private NumericUpDown _nudTolerancia;
+        private NumericUpDown _nudIntervaloSeg;
         private Button        _btnSalvarConfig;
 
-        // ── timer de polling ──────────────────────────────────────────────
+        // ── timers ────────────────────────────────────────────────────────
         private Timer    _timerPolling;
+        private Timer    _timerClock;
         private DateTime _proximaVerificacao;
 
         // ── estado ────────────────────────────────────────────────────────
-        private List<MeioCaptura> _meios           = new List<MeioCaptura>();
-        private int               _alertaMinutos   = Config.TempoAlertaPadraoMinutos;
-        private int               _intervaloSeg    = Config.IntervaloVerificacaoSegundos;
+        private List<MeioCaptura> _meios          = new List<MeioCaptura>();
+        private int _periodoHoras    = Config.PeriodoHistoricoHoras;
+        private int _toleranciaPerc  = Config.ToleranciaGlobalPercent;
+        private int _intervaloSeg    = Config.IntervaloVerificacaoSegundos;
 
-        // ── popups ativos: chave = Codigo do meio ─────────────────────────
+        // ── popups ativos por código de meio ──────────────────────────────
         private readonly Dictionary<string, FormAlerta> _popupsAtivos =
             new Dictionary<string, FormAlerta>();
         private const int MAX_POPUPS = 4;
@@ -49,8 +52,8 @@ namespace MonitorTEF
         private void ConstruirInterface()
         {
             Text          = "Monitor TEF — BigCard";
-            Size          = new Size(820, 580);
-            MinimumSize   = new Size(640, 460);
+            Size          = new Size(940, 600);
+            MinimumSize   = new Size(720, 480);
             StartPosition = FormStartPosition.CenterScreen;
             Font          = new Font("Segoe UI", 9);
             BackColor     = Color.FromArgb(245, 245, 245);
@@ -137,56 +140,40 @@ namespace MonitorTEF
             _grid.DefaultCellStyle.Padding                   = new Padding(6, 4, 6, 4);
             _grid.RowTemplate.Height                         = 32;
 
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colCodigo",   HeaderText = "Cód.",             FillWeight = 6  });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colMeio",     HeaderText = "Meio de Captura",  FillWeight = 22 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colUltima",   HeaderText = "Última Transação", FillWeight = 20 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colOcioso",   HeaderText = "Tempo Ocioso",     FillWeight = 14 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colLimite",   HeaderText = "Limite",          FillWeight = 10 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colSituacao", HeaderText = "Situação",         FillWeight = 16 });
+            // colunas — agora com Média, % da Média e Transações em vez de "Limite fixo"
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colCodigo",   HeaderText = "Cód.",             FillWeight = 5  });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colMeio",     HeaderText = "Meio de Captura",  FillWeight = 20 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colUltima",   HeaderText = "Última Transação", FillWeight = 17 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colOcioso",   HeaderText = "Ocioso há",        FillWeight = 12 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colMedia",    HeaderText = "Média Intervalo",  FillWeight = 12 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colPercent",  HeaderText = "% da Média",       FillWeight = 10 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colTxDesf",   HeaderText = "Tx / Desfaz.",     FillWeight = 11 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colSituacao", HeaderText = "Situação",         FillWeight = 13 });
 
             _grid.CellDoubleClick += Grid_CellDoubleClick;
 
-            // ── rodapé de configuração ────────────────────────────────────
+            // ── rodapé ───────────────────────────────────────────────────
             _painelRodape = new Panel
             {
                 Dock      = DockStyle.Bottom,
-                Height    = 54,
+                Height    = 56,
                 BackColor = Color.FromArgb(235, 238, 245),
                 Padding   = new Padding(14, 0, 14, 0)
             };
 
-            _lblAlertaConfig = new Label
-            {
-                Text     = "Alerta padrão (min):",
-                AutoSize = true,
-                Location = new Point(14, 18)
-            };
+            // Período histórico
+            AdicionarLabel(_painelRodape, "Período histórico (h):", 14, 18);
+            _nudPeriodoHoras = AdicionarNud(_painelRodape, 1, 168, _periodoHoras, 56, 135, 15);
 
-            _nudAlertaMinutos = new NumericUpDown
-            {
-                Minimum  = 1,
-                Maximum  = 1440,
-                Value    = _alertaMinutos,
-                Width    = 64,
-                Location = new Point(134, 15)
-            };
+            // Tolerância
+            AdicionarLabel(_painelRodape, "Tolerância (%):", 208, 18);
+            _nudTolerancia   = AdicionarNud(_painelRodape, 100, 500, _toleranciaPerc, 68, 308, 15);
 
-            _lblIntervaloConfig = new Label
-            {
-                Text     = "Verificar a cada (seg):",
-                AutoSize = true,
-                Location = new Point(218, 18)
-            };
+            // Intervalo de polling
+            AdicionarLabel(_painelRodape, "Verificar a cada (seg):", 394, 18);
+            _nudIntervaloSeg = AdicionarNud(_painelRodape, 10, 3600, _intervaloSeg, 68, 554, 15);
 
-            _nudIntervaloSegundos = new NumericUpDown
-            {
-                Minimum  = 10,
-                Maximum  = 3600,
-                Value    = _intervaloSeg,
-                Width    = 70,
-                Location = new Point(358, 15)
-            };
-
+            // Botão Aplicar
             _btnSalvarConfig = new Button
             {
                 Text      = "Aplicar",
@@ -195,7 +182,7 @@ namespace MonitorTEF
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
                 Size      = new Size(80, 26),
-                Location  = new Point(440, 13),
+                Location  = new Point(636, 15),
                 Cursor    = Cursors.Hand
             };
             _btnSalvarConfig.FlatAppearance.BorderSize = 0;
@@ -203,21 +190,30 @@ namespace MonitorTEF
 
             var lblDica = new Label
             {
-                Text      = "Duplo clique em um meio para definir limite individual.",
+                Text      = "Duplo clique → tolerância individual por meio",
                 ForeColor = Color.Gray,
                 Font      = new Font("Segoe UI", 8),
                 AutoSize  = true,
-                Location  = new Point(540, 19)
+                Location  = new Point(730, 20)
             };
 
-            _painelRodape.Controls.AddRange(new Control[]
-            {
-                _lblAlertaConfig, _nudAlertaMinutos,
-                _lblIntervaloConfig, _nudIntervaloSegundos,
-                _btnSalvarConfig, lblDica
-            });
+            _painelRodape.Controls.AddRange(new Control[] { _btnSalvarConfig, lblDica });
 
             Controls.AddRange(new Control[] { _grid, _painelTopo, _painelRodape });
+        }
+
+        private static Label AdicionarLabel(Panel p, string texto, int x, int y)
+        {
+            var l = new Label { Text = texto, AutoSize = true, Location = new Point(x, y) };
+            p.Controls.Add(l);
+            return l;
+        }
+
+        private static NumericUpDown AdicionarNud(Panel p, int min, int max, int val, int w, int x, int y)
+        {
+            var n = new NumericUpDown { Minimum = min, Maximum = max, Value = val, Width = w, Location = new Point(x, y) };
+            p.Controls.Add(n);
+            return n;
         }
 
         private void PosicionarControlesTopo()
@@ -236,19 +232,21 @@ namespace MonitorTEF
             _timerPolling.Tick    += (s, e) => ExecutarVerificacao();
             _timerPolling.Start();
 
-            var timerClock = new Timer { Interval = 1000 };
-            timerClock.Tick += (s, e) =>
+            _timerClock = new Timer { Interval = 1000 };
+            _timerClock.Tick += (s, e) =>
             {
                 if (_proximaVerificacao > DateTime.Now)
                 {
-                    var falta = _proximaVerificacao - DateTime.Now;
-                    _lblProxima.Text =
-                        $"Próxima verificação em {falta.Minutes:D2}:{falta.Seconds:D2}";
+                    var f = _proximaVerificacao - DateTime.Now;
+                    _lblProxima.Text = $"Próxima verificação em {f.Minutes:D2}:{f.Seconds:D2}";
                 }
             };
-            timerClock.Start();
+            _timerClock.Start();
         }
 
+        // ─────────────────────────────────────────────────────────────────
+        //  VERIFICAÇÃO PRINCIPAL
+        // ─────────────────────────────────────────────────────────────────
         private void ExecutarVerificacao()
         {
             _btnAtualizar.Enabled = false;
@@ -256,30 +254,33 @@ namespace MonitorTEF
 
             try
             {
-                var meiosAtualizados = BancoService.ConsultarUltimasTransacoes();
+                var meiosAtualizados = BancoService.ConsultarUltimasTransacoes(_periodoHoras);
 
                 foreach (var novo in meiosAtualizados)
                 {
                     var anterior = _meios.Find(m => m.Codigo == novo.Codigo);
                     if (anterior == null) continue;
 
-                    // preserva limite individual
-                    novo.TempoAlertaMinutos = anterior.TempoAlertaMinutos;
+                    // preserva tolerância individual configurada pelo operador
+                    novo.ToleranciaIndividualPercent = anterior.ToleranciaIndividualPercent;
 
-                    // preserva estado de análise enquanto ainda estiver ativo
                     if (anterior.AnaliseAtiva)
                     {
-                        novo.EmAnalise    = true;
-                        novo.SuprimidoAte = anterior.SuprimidoAte;
-                        novo.AlertaDisparado = true; // já foi disparado
+                        novo.EmAnalise       = true;
+                        novo.SuprimidoAte    = anterior.SuprimidoAte;
+                        novo.AlertaDisparado = true;
                     }
                     else
                     {
-                        // Reseta alerta se o meio voltou a transacionar
+                        // reseta alerta se o meio voltou a transacionar
                         novo.AlertaDisparado = anterior.AlertaDisparado
                             && novo.UltimaTransacao == anterior.UltimaTransacao;
                     }
                 }
+
+                // Calcula as métricas dinâmicas para cada meio
+                foreach (var m in meiosAtualizados)
+                    m.CalcularMetricas(_periodoHoras);
 
                 _meios              = meiosAtualizados;
                 _proximaVerificacao = DateTime.Now.AddSeconds(_intervaloSeg);
@@ -287,15 +288,16 @@ namespace MonitorTEF
                 AtualizarGrid();
                 DispararAlertas();
 
+                int criticos = _meios.FindAll(m => m.Status == StatusMeio.Critico).Count;
                 _lblStatus.Text =
                     $"Última atualização: {DateTime.Now:HH:mm:ss}  |  " +
-                    $"{_meios.Count} meio(s) monitorado(s)";
+                    $"{_meios.Count} meio(s)  |  " +
+                    (criticos > 0 ? $"⚠ {criticos} em alerta" : "Tudo normal");
             }
             catch (Exception ex)
             {
-                _lblStatus.Text = $"Erro na consulta: {ex.Message}";
-                MessageBox.Show(
-                    $"Não foi possível consultar o banco de dados:\n\n{ex.Message}",
+                _lblStatus.Text = $"Erro: {ex.Message}";
+                MessageBox.Show($"Erro ao consultar o banco:\n\n{ex.Message}",
                     "Erro de Conexão", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -311,57 +313,93 @@ namespace MonitorTEF
         {
             _grid.Rows.Clear();
 
-            foreach (var m in _meios)
+            // ordena: Crítico → Atenção → SemDados → Ok
+            var ordenados = new List<MeioCaptura>(_meios);
+            ordenados.Sort((a, b) =>
             {
-                string tempoOcioso = m.UltimaTransacao.HasValue
-                    ? FormatarTempo(m.TempoOcioso) : "Sem registro";
+                int prioA = PrioridadeStatus(a.Status);
+                int prioB = PrioridadeStatus(b.Status);
+                return prioA.CompareTo(prioB);
+            });
 
-                string ultimaTx = m.UltimaTransacao.HasValue
+            foreach (var m in ordenados)
+            {
+                string ultimaTx   = m.UltimaTransacao.HasValue
                     ? m.UltimaTransacao.Value.ToString("dd/MM/yyyy HH:mm:ss") : "—";
-
-                bool emAlerta = m.UltimaTransacao.HasValue
-                    && m.TempoOcioso.TotalMinutes >= m.LimiteEfetivoMinutos;
+                string ocioso     = m.UltimaTransacao.HasValue
+                    ? FormatarTempo(m.TempoOcioso) : "Sem registro";
+                string media      = m.MediaIntervaloMinutos > 0
+                    ? FormatarMinutos(m.MediaIntervaloMinutos) : "—";
+                string percentual = m.PercentualMedia > 0
+                    ? $"{m.PercentualMedia:F0}%" : "—";
+                string txDesf     = m.TotalTransacoes > 0
+                    ? $"{m.TotalTransacoes} / {m.TotalDesfazimentos}" : "—";
 
                 string situacao;
-                if (!m.UltimaTransacao.HasValue)
-                    situacao = "Sem dados";
-                else if (m.AnaliseAtiva)
+                if (m.AnaliseAtiva)
                 {
-                    var rest = m.TempoRestanteAnalise;
-                    situacao = $"🔍 EM ANÁLISE ({rest.Minutes:D2}:{rest.Seconds:D2})";
+                    var r = m.TempoRestanteAnalise;
+                    situacao = $"🔍 EM ANÁLISE ({r.Minutes:D2}:{r.Seconds:D2})";
                 }
-                else if (emAlerta)
-                    situacao = "⚠ EM ALERTA";
                 else
-                    situacao = "✔ Normal";
+                {
+                    switch (m.Status)
+                    {
+                        case StatusMeio.Critico:  situacao = "⚠ CRÍTICO";        break;
+                        case StatusMeio.Atencao:  situacao = "◉ ATENÇÃO";         break;
+                        case StatusMeio.SemDados: situacao = "— Sem dados";       break;
+                        default:                  situacao = "✔ Normal";           break;
+                    }
+                }
+
+                // tolerância efetiva para exibir na coluna % da Média como tooltip
+                int tolEfetiva = m.ToleranciaEfetivaPercent;
 
                 int rowIdx = _grid.Rows.Add(
-                    m.Codigo,
-                    m.Nome,
-                    ultimaTx,
-                    tempoOcioso,
-                    $"{m.LimiteEfetivoMinutos} min",
-                    situacao
-                );
+                    m.Codigo, m.Nome, ultimaTx, ocioso,
+                    media, percentual, txDesf, situacao);
 
                 var row = _grid.Rows[rowIdx];
+                row.Tag = m.Codigo; // para recuperar o meio no duplo clique
 
+                // tooltip na coluna % mostrando o limite efetivo
+                row.Cells["colPercent"].ToolTipText =
+                    $"Limite de alerta: {tolEfetiva}% da média" +
+                    (m.ToleranciaIndividualPercent > 0 ? " (individual)" : " (global)");
+
+                // cores
                 if (m.AnaliseAtiva)
                 {
                     row.DefaultCellStyle.BackColor = Color.FromArgb(60, 50, 10);
                     row.DefaultCellStyle.ForeColor = Color.FromArgb(220, 170, 30);
                     row.DefaultCellStyle.Font      = new Font("Segoe UI", 9, FontStyle.Italic);
                 }
-                else if (emAlerta)
+                else if (m.Status == StatusMeio.Critico)
                 {
-                    row.DefaultCellStyle.BackColor = Color.FromArgb(255, 235, 235);
-                    row.DefaultCellStyle.ForeColor = Color.FromArgb(180, 30, 30);
+                    row.DefaultCellStyle.BackColor = Color.FromArgb(255, 232, 232);
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(160, 20, 20);
                     row.DefaultCellStyle.Font      = new Font("Segoe UI", 9, FontStyle.Bold);
                 }
-                else if (!m.UltimaTransacao.HasValue)
+                else if (m.Status == StatusMeio.Atencao)
+                {
+                    row.DefaultCellStyle.BackColor = Color.FromArgb(255, 248, 220);
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(130, 90, 0);
+                }
+                else if (m.Status == StatusMeio.SemDados)
                 {
                     row.DefaultCellStyle.ForeColor = Color.Gray;
                 }
+            }
+        }
+
+        private static int PrioridadeStatus(StatusMeio s)
+        {
+            switch (s)
+            {
+                case StatusMeio.Critico:  return 0;
+                case StatusMeio.Atencao:  return 1;
+                case StatusMeio.SemDados: return 2;
+                default:                  return 3;
             }
         }
 
@@ -372,23 +410,18 @@ namespace MonitorTEF
         {
             foreach (var m in _meios)
             {
-                if (!m.UltimaTransacao.HasValue)              continue;
-                if (m.AlertaDisparado)                        continue;
-                if (m.AnaliseAtiva)                           continue;
-                if (m.TempoOcioso.TotalMinutes < m.LimiteEfetivoMinutos) continue;
-                if (_popupsAtivos.Count >= MAX_POPUPS)        break;
-                if (_popupsAtivos.ContainsKey(m.Codigo))      continue;
+                if (m.Status != StatusMeio.Critico)    continue;
+                if (m.AlertaDisparado)                 continue;
+                if (m.AnaliseAtiva)                    continue;
+                if (_popupsAtivos.Count >= MAX_POPUPS) break;
+                if (_popupsAtivos.ContainsKey(m.Codigo)) continue;
 
                 m.AlertaDisparado = true;
-
-                // offset de empilhamento
                 int offsetY = _popupsAtivos.Count * 112;
 
-                // captura local para uso no lambda
                 var meioLocal = m;
-                var popup = new FormAlerta(meioLocal, offsetY);
+                var popup     = new FormAlerta(meioLocal, offsetY);
 
-                // ── CONFIRMADO: apenas fecha e reseta o alerta ────────────
                 popup.ConfirmadoClick += (s, e) =>
                 {
                     meioLocal.AlertaDisparado = false;
@@ -397,38 +430,29 @@ namespace MonitorTEF
                     AtualizarGrid();
                 };
 
-                // ── ANÁLISE: marca supressão no modelo ────────────────────
                 popup.AnaliseClick += (s, e) =>
                 {
                     meioLocal.EmAnalise    = true;
                     meioLocal.SuprimidoAte = DateTime.Now.AddMinutes(
                         Config.SupressaoAnaliseMinutos);
-
                     AtualizarGrid();
 
-                    // agenda reativação: quando a supressão expirar, reseta
-                    // e deixa o próximo ciclo de polling re-disparar o alerta
-                    var timerReativacao = new Timer
+                    var timerReat = new Timer
+                        { Interval = Config.SupressaoAnaliseMinutos * 60 * 1000 };
+                    timerReat.Tick += (ts, te) =>
                     {
-                        Interval = Config.SupressaoAnaliseMinutos * 60 * 1000
-                    };
-                    timerReativacao.Tick += (ts, te) =>
-                    {
-                        timerReativacao.Stop();
-                        meioLocal.EmAnalise      = false;
-                        meioLocal.AlertaDisparado = false;   // permite novo alerta
+                        timerReat.Stop();
+                        meioLocal.EmAnalise       = false;
+                        meioLocal.AlertaDisparado = false;
                         _popupsAtivos.Remove(meioLocal.Codigo);
                         AtualizarGrid();
-                        // força verificação imediata para re-avaliar
                         ExecutarVerificacao();
                     };
-                    timerReativacao.Start();
+                    timerReat.Start();
                 };
 
                 popup.FormClosed += (s, e) =>
-                {
                     _popupsAtivos.Remove(meioLocal.Codigo);
-                };
 
                 _popupsAtivos[m.Codigo] = popup;
                 popup.Show();
@@ -436,19 +460,26 @@ namespace MonitorTEF
         }
 
         // ─────────────────────────────────────────────────────────────────
-        //  DUPLO CLIQUE — configuração individual
+        //  DUPLO CLIQUE — tolerância individual por meio
         // ─────────────────────────────────────────────────────────────────
         private void Grid_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
         {
-            if (e.RowIndex < 0 || e.RowIndex >= _meios.Count) return;
-            var meio = _meios[e.RowIndex];
+            if (e.RowIndex < 0) return;
+
+            // recupera o meio pelo código guardado em Tag
+            string codigo = _grid.Rows[e.RowIndex].Tag as string;
+            if (codigo == null) return;
+
+            var meio = _meios.Find(m => m.Codigo == codigo);
+            if (meio == null) return;
 
             using (var dlg = new FormConfigurarMeio(meio))
             {
                 if (dlg.ShowDialog() == DialogResult.OK)
                 {
-                    meio.TempoAlertaMinutos = dlg.TempoAlertaMinutos;
-                    meio.AlertaDisparado    = false;
+                    meio.ToleranciaIndividualPercent = dlg.ToleranciaPercent;
+                    meio.AlertaDisparado             = false;
+                    meio.CalcularMetricas(_periodoHoras); // recalcula com nova tolerância
                     AtualizarGrid();
                 }
             }
@@ -459,20 +490,28 @@ namespace MonitorTEF
         // ─────────────────────────────────────────────────────────────────
         private void BtnSalvarConfig_Click(object sender, EventArgs e)
         {
-            _alertaMinutos = (int)_nudAlertaMinutos.Value;
-            _intervaloSeg  = (int)_nudIntervaloSegundos.Value;
+            _periodoHoras   = (int)_nudPeriodoHoras.Value;
+            _toleranciaPerc = (int)_nudTolerancia.Value;
+            _intervaloSeg   = (int)_nudIntervaloSeg.Value;
 
             _timerPolling.Interval = _intervaloSeg * 1000;
 
+            // reseta alertas e recalcula com novos parâmetros
             foreach (var m in _meios)
             {
-                if (m.TempoAlertaMinutos == 0)  // só os que usam o padrão
+                if (m.ToleranciaIndividualPercent == 0) // só os que usam global
                     m.AlertaDisparado = false;
             }
 
-            AtualizarGrid();
-            MessageBox.Show("Configurações aplicadas!", "Monitor TEF",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            // força verificação imediata com novo período
+            ExecutarVerificacao();
+
+            MessageBox.Show(
+                $"Configurações aplicadas!\n\n" +
+                $"Período: {_periodoHoras}h  |  " +
+                $"Tolerância: {_toleranciaPerc}%  |  " +
+                $"Polling: {_intervaloSeg}s",
+                "Monitor TEF", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         // ─────────────────────────────────────────────────────────────────
@@ -484,6 +523,16 @@ namespace MonitorTEF
             if (ts.TotalHours >= 1)
                 return $"{(int)ts.TotalHours}h {ts.Minutes:D2}min";
             return $"{ts.Minutes}min {ts.Seconds:D2}s";
+        }
+
+        private static string FormatarMinutos(double minutos)
+        {
+            if (minutos <= 0) return "—";
+            if (minutos >= 60)
+                return $"{(int)(minutos / 60)}h {(int)(minutos % 60):D2}min";
+            if (minutos >= 1)
+                return $"{minutos:F1}min";
+            return $"{(int)(minutos * 60)}s";
         }
     }
 }

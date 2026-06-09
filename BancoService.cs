@@ -14,19 +14,31 @@ namespace MonitorTEF
             "Connect Timeout=10;";
 
         /// <summary>
-        /// Retorna a última data/hora de transação de cada TIPO presente em LOG_TEF.
+        /// Busca, para cada TIPO presente em LOG_TEF no período configurado:
+        ///   - A última data/hora de transação
+        ///   - O total de transações no período (para calcular a média)
+        ///   - O total de desfazimentos (operação 0420) no período
+        ///
+        /// Esses dados permitem calcular a média dinâmica de intervalo:
+        ///   mediaIntervalo = periodoMinutos / totalTransacoes
         /// </summary>
-        public static List<MeioCaptura> ConsultarUltimasTransacoes()
+        public static List<MeioCaptura> ConsultarUltimasTransacoes(int periodoHoras)
         {
             var resultado = new List<MeioCaptura>();
 
+            // DATA_LIMITE: início do período de histórico
+            // GETDATE() - N horas
             const string sql = @"
                 SELECT
                     TIPO,
-                    MAX(DATA) AS ULTIMA_TRANSACAO
+                    MAX(DATA)                           AS ULTIMA_TRANSACAO,
+                    COUNT(*)                            AS TOTAL_TRANSACOES,
+                    SUM(CASE WHEN OPERACAO = '0420'
+                             THEN 1 ELSE 0 END)         AS TOTAL_DESFAZIMENTOS
                 FROM LOG_TEF WITH (NOLOCK)
-                WHERE TIPO IS NOT NULL
-                  AND TIPO <> ''
+                WHERE TIPO     IS NOT NULL
+                  AND TIPO     <> ''
+                  AND DATA     >= DATEADD(HOUR, @periodoHoras * -1, GETDATE())
                 GROUP BY TIPO
                 ORDER BY TIPO";
 
@@ -34,23 +46,34 @@ namespace MonitorTEF
             {
                 conn.Open();
                 using (var cmd = new SqlCommand(sql, conn))
-                using (var reader = cmd.ExecuteReader())
                 {
-                    while (reader.Read())
+                    cmd.Parameters.AddWithValue("@periodoHoras", periodoHoras);
+
+                    using (var reader = cmd.ExecuteReader())
                     {
-                        var codigo = reader["TIPO"]?.ToString()?.Trim() ?? "";
-                        DateTime? ultima = null;
-
-                        if (!reader.IsDBNull(1))
-                            ultima = Convert.ToDateTime(reader["ULTIMA_TRANSACAO"]);
-
-                        resultado.Add(new MeioCaptura
+                        while (reader.Read())
                         {
-                            Codigo           = codigo,
-                            Nome             = MeiosConhecidos.NomeOuCodigo(codigo),
-                            UltimaTransacao  = ultima,
-                            AlertaDisparado  = false
-                        });
+                            var codigo = reader["TIPO"]?.ToString()?.Trim() ?? "";
+
+                            DateTime? ultima = null;
+                            if (!reader.IsDBNull(reader.GetOrdinal("ULTIMA_TRANSACAO")))
+                                ultima = Convert.ToDateTime(reader["ULTIMA_TRANSACAO"]);
+
+                            int totalTx   = reader.IsDBNull(reader.GetOrdinal("TOTAL_TRANSACOES"))
+                                            ? 0 : Convert.ToInt32(reader["TOTAL_TRANSACOES"]);
+                            int totalDesf = reader.IsDBNull(reader.GetOrdinal("TOTAL_DESFAZIMENTOS"))
+                                            ? 0 : Convert.ToInt32(reader["TOTAL_DESFAZIMENTOS"]);
+
+                            resultado.Add(new MeioCaptura
+                            {
+                                Codigo             = codigo,
+                                Nome               = MeiosConhecidos.NomeOuCodigo(codigo),
+                                UltimaTransacao    = ultima,
+                                TotalTransacoes    = totalTx,
+                                TotalDesfazimentos = totalDesf,
+                                AlertaDisparado    = false
+                            });
+                        }
                     }
                 }
             }

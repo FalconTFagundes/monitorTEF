@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MonitorTEF")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ed6e8f156460876eddf95c1e5b18bc19d0ef5e2b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e1aa81671d0aee4a18bedabf30f9a8a30ad42a48")]
 [assembly: System.Reflection.AssemblyProductAttribute("MonitorTEF")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MonitorTEF")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

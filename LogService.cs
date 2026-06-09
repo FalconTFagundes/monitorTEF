@@ -4,10 +4,6 @@ using System.Text;
 
 namespace MonitorTEF
 {
-    /// <summary>
-    /// Grava ações dos operadores (CONFIRMADO / ANALISE) em CSV na pasta de rede.
-    /// Thread-safe via lock estático.
-    /// </summary>
     internal static class LogService
     {
         private static readonly object _lock = new object();
@@ -18,32 +14,26 @@ namespace MonitorTEF
         private static readonly string[] Cabecalho =
         {
             "Timestamp", "Operador", "Maquina", "Codigo", "Meio", "Acao",
-            "TempoOcioso", "LimiteMinutos", "Observacao"
+            "TempoOcioso", "PercentualMedia", "ToleranciaPercent", "Observacao"
         };
 
-        /// <summary>
-        /// Registra uma ação do operador no CSV compartilhado em rede.
-        /// </summary>
         public static void Registrar(
-            string codigoMeio,
-            string nomeMeio,
+            string       codigoMeio,
+            string       nomeMeio,
             AcaoOperador acao,
-            TimeSpan tempoOcioso,
-            int limiteMinutos,
-            string obs = "")
+            TimeSpan     tempoOcioso,
+            int          toleranciaPercent,
+            string       obs = "")
         {
             try
             {
                 lock (_lock)
                 {
-                    bool arquivoNovo = !File.Exists(CaminhoCompleto);
-
+                    bool novo = !File.Exists(CaminhoCompleto);
                     using (var sw = new StreamWriter(CaminhoCompleto,
                            append: true, encoding: new UTF8Encoding(true)))
                     {
-                        // escreve cabeçalho só na primeira vez
-                        if (arquivoNovo)
-                            sw.WriteLine(string.Join(";", Cabecalho));
+                        if (novo) sw.WriteLine(string.Join(";", Cabecalho));
 
                         sw.WriteLine(string.Join(";",
                             DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
@@ -53,7 +43,7 @@ namespace MonitorTEF
                             Escapar(nomeMeio),
                             acao.ToString(),
                             FormatarTempo(tempoOcioso),
-                            limiteMinutos.ToString(),
+                            toleranciaPercent.ToString() + "%",
                             Escapar(obs)
                         ));
                     }
@@ -61,15 +51,13 @@ namespace MonitorTEF
             }
             catch (Exception ex)
             {
-                // falha silenciosa — não travar o operador por problema de rede
-                System.Diagnostics.Debug.WriteLine($"[LogService] Erro ao gravar log: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[LogService] {ex.Message}");
             }
         }
 
         private static string Escapar(string s)
         {
             if (string.IsNullOrEmpty(s)) return "";
-            // envolve em aspas se contiver ponto-e-vírgula ou quebra de linha
             if (s.Contains(";") || s.Contains("\n") || s.Contains("\""))
                 return "\"" + s.Replace("\"", "\"\"") + "\"";
             return s;
@@ -84,9 +72,5 @@ namespace MonitorTEF
         }
     }
 
-    internal enum AcaoOperador
-    {
-        CONFIRMADO,
-        ANALISE
-    }
+    internal enum AcaoOperador { CONFIRMADO, ANALISE }
 }
