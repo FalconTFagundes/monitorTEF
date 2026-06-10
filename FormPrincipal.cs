@@ -233,7 +233,7 @@ namespace MonitorTEF
 
             var lblDica = new Label
             {
-                Text      = "Duplo clique → tolerância individual por meio",
+                Text      = $"Duplo clique → tolerância individual por meio  |  Fonte: {Config.UrlServidor}",
                 ForeColor = Color.Gray,
                 Font      = new Font("Segoe UI", 8),
                 AutoSize  = true,
@@ -297,7 +297,7 @@ namespace MonitorTEF
 
             try
             {
-                var meiosAtualizados = BancoService.ConsultarUltimasTransacoes(_periodoHoras);
+                var meiosAtualizados = ApiService.ConsultarUltimasTransacoes(_periodoHoras);
 
                 // ── Primeiro: calcula métricas de TODOS os meios novos ──────────
                 foreach (var m in meiosAtualizados)
@@ -391,11 +391,19 @@ namespace MonitorTEF
                     $"{_meios.Count} meio(s)  |  " +
                     (criticos > 0 ? $"⚠ {criticos} em alerta" : "Tudo normal");
             }
+            catch (System.Net.WebException ex)
+                when (ex.Status == System.Net.WebExceptionStatus.ConnectFailure
+                   || ex.Status == System.Net.WebExceptionStatus.Timeout)
+            {
+                // Servidor Python offline ou inacessível
+                _lblStatus.Text = $"⚠ Servidor offline — {Config.UrlServidor}";
+                // Não abre MessageBox para não travar o operador; o status já indica
+            }
             catch (Exception ex)
             {
                 _lblStatus.Text = $"Erro: {ex.Message}";
-                MessageBox.Show($"Erro ao consultar o banco:\n\n{ex.Message}",
-                    "Erro de Conexão", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Erro ao consultar o servidor:\n\n{ex.Message}",
+                    "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
