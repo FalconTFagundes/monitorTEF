@@ -42,6 +42,12 @@ namespace MonitorTEF
         public TimeSpan TempoRestanteAnalise => AnaliseAtiva
             ? SuprimidoAte - DateTime.Now : TimeSpan.Zero;
 
+        /// <summary>
+        /// Permite sobrescrever o Status calculado por CalcularMetricas.
+        /// Usado pelo meio sintético REDECOMPRAS.
+        /// </summary>
+        public void ForcarStatus(StatusMeio status) => Status = status;
+
         // ── Limite individual opcional (0 = usa tolerância global) ────
         // Continua existindo para casos onde o operador quer forçar
         // um limite mínimo independente do histórico.

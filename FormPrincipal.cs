@@ -311,15 +311,31 @@ namespace MonitorTEF
                     }
                     else
                     {
-                        // reseta alerta se o meio voltou a transacionar
-                        novo.AlertaDisparado = anterior.AlertaDisparado
-                            && novo.UltimaTransacao == anterior.UltimaTransacao;
+                        // Preserva AlertaDisparado enquanto o meio AINDA estiver crítico.
+                        // Só reseta quando o meio realmente voltar ao normal
+                        // (nova transação que derrubou o percentual abaixo da tolerância).
+                        // Isso evita re-disparar o popup a cada ciclo de polling.
+                        novo.AlertaDisparado = anterior.AlertaDisparado;
+                        // A flag será limpa em DispararAlertas/Confirmar/Análise
+                        // quando o Status deixar de ser Crítico.
                     }
                 }
 
                 // Calcula as métricas dinâmicas para cada meio
                 foreach (var m in meiosAtualizados)
+                {
                     m.CalcularMetricas(_periodoHoras);
+
+                    // Se saiu do estado crítico (voltou a transacionar normalmente),
+                    // libera a flag para poder disparar alerta no próximo evento crítico
+                    if (m.Status != StatusMeio.Critico && !m.AnaliseAtiva)
+                        m.AlertaDisparado = false;
+                }
+
+                // Injeta o meio sintético RC (agrega todos os meios [ RC ])
+                var meioRC = CriarMeioRedeCompras(meiosAtualizados);
+                if (meioRC != null)
+                    meiosAtualizados.Add(meioRC);
 
                 _meios              = meiosAtualizados;
                 _proximaVerificacao = DateTime.Now.AddSeconds(_intervaloSeg);
@@ -445,6 +461,87 @@ namespace MonitorTEF
         // ─────────────────────────────────────────────────────────────────
         //  ALERTAS
         // ─────────────────────────────────────────────────────────────────
+        // ─────────────────────────────────────────────────────────────────
+        //  MEIO SINTÉTICO: REDECOMPRAS
+        //  Agrega todos os meios com [ RC ] no nome.
+        //  Regra de alerta:
+        //    - Se TODOS os meios RC estiverem sem transacionar (Crítico ou SemDados)
+        //      → RC fica Crítico (problema no grupo inteiro)
+        //    - Se pelo menos um estiver OK ou Atenção
+        //      → RC fica OK (algum canal RC ainda está respondendo)
+        // ─────────────────────────────────────────────────────────────────
+        private MeioCaptura CriarMeioRedeCompras(List<MeioCaptura> meios)
+        {
+            var membros = meios.FindAll(m => m.Nome.Contains("[ RC ]"));
+            if (membros.Count == 0) return null;
+
+            // preserva estado anterior do RC sintético
+            var anterior = _meios.Find(m => m.Codigo == "RC");
+
+            // última transação = a mais recente entre todos os membros RC
+            DateTime? ultimaRC = null;
+            foreach (var mb in membros)
+            {
+                if (!mb.UltimaTransacao.HasValue) continue;
+                if (ultimaRC == null || mb.UltimaTransacao.Value > ultimaRC.Value)
+                    ultimaRC = mb.UltimaTransacao;
+            }
+
+            // total de transações e desfazimentos somados
+            int totalTx   = 0;
+            int totalDesf = 0;
+            foreach (var mb in membros) { totalTx += mb.TotalTransacoes; totalDesf += mb.TotalDesfazimentos; }
+
+            // status: Crítico só se TODOS estiverem críticos ou sem dados
+            bool todosProblema = membros.TrueForAll(
+                mb => mb.Status == StatusMeio.Critico || mb.Status == StatusMeio.SemDados);
+
+            var rc = new MeioCaptura
+            {
+                Codigo             = "RC",
+                Nome               = "REDECOMPRAS",
+                UltimaTransacao    = ultimaRC,
+                TotalTransacoes    = totalTx,
+                TotalDesfazimentos = totalDesf,
+            };
+
+            // calcula métricas com base nos dados agregados
+            rc.CalcularMetricas(_periodoHoras);
+
+            // sobrescreve status pela regra de negócio RC
+            if (todosProblema)
+            {
+                // força Crítico via propriedade pública (CalcularMetricas pode ter dito OK
+                // se a última tx agregada for recente)
+                // — usamos o campo público StatusForcado para isso
+                rc.ForcarStatus(StatusMeio.Critico);
+            }
+            else
+            {
+                rc.ForcarStatus(StatusMeio.Ok);
+            }
+
+            // preserva AlertaDisparado e estado de análise
+            if (anterior != null)
+            {
+                rc.ToleranciaIndividualPercent = anterior.ToleranciaIndividualPercent;
+                if (anterior.AnaliseAtiva)
+                {
+                    rc.EmAnalise    = true;
+                    rc.SuprimidoAte = anterior.SuprimidoAte;
+                    rc.AlertaDisparado = true;
+                }
+                else
+                {
+                    rc.AlertaDisparado = anterior.AlertaDisparado;
+                    if (rc.Status != StatusMeio.Critico && !rc.AnaliseAtiva)
+                        rc.AlertaDisparado = false;
+                }
+            }
+
+            return rc;
+        }
+
         private void DispararAlertas()
         {
             foreach (var m in _meios)
