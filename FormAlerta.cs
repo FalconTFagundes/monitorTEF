@@ -1,6 +1,5 @@
 using System;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
 namespace MonitorTEF
@@ -8,30 +7,32 @@ namespace MonitorTEF
     public class FormAlerta : Form
     {
         // ── dimensões ─────────────────────────────────────────────────────
-        private const int LARGURA        = 360;
-        private const int ALTURA_ALERTA  = 180;
-        private const int ALTURA_ANALISE = 88;
-        private const int MARGEM         = 14;
-        private const int BARRA_W        = 5;
+        private const int LARGURA        = 300;
+        private const int ALTURA_ALERTA  = 130;
+        private const int ALTURA_ANALISE = 56;
+        private const int MARGEM         = 12;
+        private const int BARRA_W        = 4;
 
         // ── paleta ALERTA ─────────────────────────────────────────────────
-        private static readonly Color BgAlerta      = Color.FromArgb(22, 22, 32);
-        private static readonly Color BarraAlerta   = Color.FromArgb(220, 55, 55);
-        private static readonly Color TextoPrimario = Color.FromArgb(240, 240, 245);
-        private static readonly Color TextoSecund   = Color.FromArgb(160, 165, 185);
-        private static readonly Color BtnVerdeBg    = Color.FromArgb(25, 110, 65);
-        private static readonly Color BtnVerdeBord  = Color.FromArgb(40, 160, 95);
-        private static readonly Color BtnAmBg       = Color.FromArgb(120, 85, 10);
-        private static readonly Color BtnAmBord     = Color.FromArgb(200, 145, 20);
+        private static readonly Color BgAlerta     = Color.FromArgb(22, 22, 32);
+        private static readonly Color BarraAlerta  = Color.FromArgb(210, 50, 50);
+        private static readonly Color CorNome      = Color.FromArgb(240, 240, 245);
+        private static readonly Color CorTempo     = Color.FromArgb(210, 50, 50);
+        private static readonly Color CorDetalhe   = Color.FromArgb(130, 135, 155);
+        private static readonly Color BtnVerdeBg   = Color.FromArgb(22, 100, 58);
+        private static readonly Color BtnVerdeBord = Color.FromArgb(35, 150, 85);
+        private static readonly Color BtnAmBg      = Color.FromArgb(110, 78, 8);
+        private static readonly Color BtnAmBord    = Color.FromArgb(190, 138, 18);
 
         // ── paleta ANÁLISE ────────────────────────────────────────────────
-        private static readonly Color BgAnalise     = Color.FromArgb(28, 22, 8);
-        private static readonly Color BarraAnalise  = Color.FromArgb(215, 160, 25);
-        private static readonly Color TextoAnalise  = Color.FromArgb(215, 160, 25);
+        private static readonly Color BgAnalise    = Color.FromArgb(25, 20, 6);
+        private static readonly Color BarraAnalise = Color.FromArgb(200, 150, 20);
+        private static readonly Color CorAnalise   = Color.FromArgb(200, 150, 20);
 
         // ── estado ────────────────────────────────────────────────────────
         private readonly MeioCaptura _meio;
-        private readonly int         _offsetY;
+        public  int SlotIndex { get; set; }   // slot de empilhamento (0=mais abaixo)
+
         private bool _emAnalise = false;
         private bool _fechando  = false;
 
@@ -51,10 +52,10 @@ namespace MonitorTEF
         public event EventHandler AnaliseClick;
 
         // ─────────────────────────────────────────────────────────────────
-        public FormAlerta(MeioCaptura meio, int offsetY = 0)
+        public FormAlerta(MeioCaptura meio, int slotIndex = 0)
         {
-            _meio    = meio;
-            _offsetY = offsetY;
+            _meio     = meio;
+            SlotIndex = slotIndex;
 
             FormBorderStyle = FormBorderStyle.None;
             StartPosition   = FormStartPosition.Manual;
@@ -64,15 +65,27 @@ namespace MonitorTEF
             BackColor       = BgAlerta;
 
             ConstruirControles();
-            Posicionar(LARGURA, ALTURA_ALERTA);
+            AtualizarPosicao();
         }
 
         // ─────────────────────────────────────────────────────────────────
-        //  CONSTRUÇÃO DOS CONTROLES
+        //  POSICIONAMENTO — recalculável quando um slot muda
+        // ─────────────────────────────────────────────────────────────────
+        public void AtualizarPosicao()
+        {
+            int altura = _emAnalise ? ALTURA_ANALISE : ALTURA_ALERTA;
+            Size = new Size(LARGURA, altura);
+            var area = Screen.PrimaryScreen.WorkingArea;
+            Location = new Point(
+                area.Right  - LARGURA - MARGEM,
+                area.Bottom - altura  - MARGEM - SlotIndex * (ALTURA_ALERTA + 6));
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        //  CONTROLES
         // ─────────────────────────────────────────────────────────────────
         private void ConstruirControles()
         {
-            // barra lateral
             _barra = new Panel
             {
                 BackColor = BarraAlerta,
@@ -80,96 +93,93 @@ namespace MonitorTEF
                 Width     = BARRA_W
             };
 
-            // ── NOME DO MEIO (grande, destaque máximo) ────────────────────
+            // nome do meio — destaque máximo
             _lblNome = new Label
             {
                 Text      = _meio.Nome,
-                Font      = new Font("Segoe UI", 14, FontStyle.Bold),
-                ForeColor = TextoPrimario,
-                Location  = new Point(20, 18),
-                Size      = new Size(310, 30),
+                Font      = new Font("Segoe UI", 11, FontStyle.Bold),
+                ForeColor = CorNome,
+                Location  = new Point(16, 12),
+                Size      = new Size(262, 24),
                 BackColor = Color.Transparent
             };
 
-            // ── TEMPO OCIOSO (número grande, cor de alerta) ───────────────
-            string tempoStr = FormatarTempoOcioso(_meio.TempoOcioso);
+            // tempo ocioso — segunda info mais importante
             _lblTempo = new Label
             {
-                Text      = $"Sem transacionar há  {tempoStr}",
-                Font      = new Font("Segoe UI", 11, FontStyle.Bold),
-                ForeColor = BarraAlerta,
-                Location  = new Point(20, 52),
-                Size      = new Size(320, 26),
+                Text      = "há  " + FormatarTempo(_meio.TempoOcioso),
+                Font      = new Font("Segoe UI", 10, FontStyle.Bold),
+                ForeColor = CorTempo,
+                Location  = new Point(16, 38),
+                Size      = new Size(262, 22),
                 BackColor = Color.Transparent
             };
 
-            // ── DETALHE DISCRETO (uma linha, média) ───────────────────────
-            string mediaStr = _meio.MediaIntervaloMinutos > 0
-                ? $"Média histórica: {FormatarMin(_meio.MediaIntervaloMinutos)}"
+            // detalhe discreto — só a média, em cinza pequeno
+            string media = _meio.MediaIntervaloMinutos > 0
+                ? $"média do meio: {FormatarMin(_meio.MediaIntervaloMinutos)}"
                 : "";
-
             _lblDetalhe = new Label
             {
-                Text      = mediaStr,
-                Font      = new Font("Segoe UI", 8.5f),
-                ForeColor = TextoSecund,
-                Location  = new Point(20, 82),
-                Size      = new Size(320, 18),
+                Text      = media,
+                Font      = new Font("Segoe UI", 7.5f),
+                ForeColor = CorDetalhe,
+                Location  = new Point(16, 62),
+                Size      = new Size(262, 16),
                 BackColor = Color.Transparent
             };
 
-            // ── BOTÃO CONFIRMAR ───────────────────────────────────────────
+            // botões — altura reduzida, sem ícone emoji para evitar rendering quebrado
             _btnConfirmar = new Button
             {
-                Text      = "✔   Confirmar",
-                Font      = new Font("Segoe UI", 9, FontStyle.Bold),
+                Text      = "Confirmar",
+                Font      = new Font("Segoe UI", 8, FontStyle.Bold),
                 ForeColor = Color.White,
                 BackColor = BtnVerdeBg,
                 FlatStyle = FlatStyle.Flat,
-                Size      = new Size(152, 36),
-                Location  = new Point(20, 118),
+                Size      = new Size(130, 28),
+                Location  = new Point(16, 88),
                 Cursor    = Cursors.Hand
             };
             _btnConfirmar.FlatAppearance.BorderColor = BtnVerdeBord;
             _btnConfirmar.FlatAppearance.BorderSize  = 1;
             _btnConfirmar.Click += BtnConfirmar_Click;
 
-            // ── BOTÃO EM ANÁLISE ──────────────────────────────────────────
             _btnAnalise = new Button
             {
-                Text      = "🔍   Em Análise",
-                Font      = new Font("Segoe UI", 9, FontStyle.Bold),
+                Text      = "Em Analise",
+                Font      = new Font("Segoe UI", 8, FontStyle.Bold),
                 ForeColor = Color.White,
                 BackColor = BtnAmBg,
                 FlatStyle = FlatStyle.Flat,
-                Size      = new Size(152, 36),
-                Location  = new Point(182, 118),
+                Size      = new Size(130, 28),
+                Location  = new Point(152, 88),
                 Cursor    = Cursors.Hand
             };
             _btnAnalise.FlatAppearance.BorderColor = BtnAmBord;
             _btnAnalise.FlatAppearance.BorderSize  = 1;
             _btnAnalise.Click += BtnAnalise_Click;
 
-            // ── LABEL ESTADO ANÁLISE (oculto por padrão) ──────────────────
+            // label estado análise (oculto por padrão)
             _lblAnaliseInfo = new Label
             {
                 Text      = "",
-                Font      = new Font("Segoe UI", 10, FontStyle.Bold),
-                ForeColor = TextoAnalise,
-                Location  = new Point(20, 28),
-                Size      = new Size(316, 24),
+                Font      = new Font("Segoe UI", 9, FontStyle.Bold),
+                ForeColor = CorAnalise,
+                Location  = new Point(16, 16),
+                Size      = new Size(270, 22),
                 BackColor = Color.Transparent,
                 Visible   = false
             };
 
-            // ── X de fechar (discreto) ────────────────────────────────────
+            // X discreto
             var btnX = new Label
             {
                 Text      = "×",
-                Font      = new Font("Segoe UI", 12),
-                ForeColor = Color.FromArgb(80, 85, 100),
-                Location  = new Point(LARGURA - 22, 5),
-                Size      = new Size(18, 18),
+                Font      = new Font("Segoe UI", 10),
+                ForeColor = Color.FromArgb(70, 75, 90),
+                Location  = new Point(LARGURA - 18, 4),
+                Size      = new Size(16, 16),
                 Cursor    = Cursors.Hand,
                 BackColor = Color.Transparent
             };
@@ -180,25 +190,12 @@ namespace MonitorTEF
                 _barra,
                 _lblNome, _lblTempo, _lblDetalhe,
                 _btnConfirmar, _btnAnalise,
-                _lblAnaliseInfo,
-                btnX
+                _lblAnaliseInfo, btnX
             });
         }
 
         // ─────────────────────────────────────────────────────────────────
-        //  POSICIONAMENTO (canto inferior direito, empilhado)
-        // ─────────────────────────────────────────────────────────────────
-        private void Posicionar(int largura, int altura)
-        {
-            Size = new Size(largura, altura);
-            var area = Screen.PrimaryScreen.WorkingArea;
-            Location = new Point(
-                area.Right  - largura - MARGEM,
-                area.Bottom - altura  - MARGEM - _offsetY);
-        }
-
-        // ─────────────────────────────────────────────────────────────────
-        //  FADE IN ao mostrar
+        //  FADE IN
         // ─────────────────────────────────────────────────────────────────
         protected override void OnShown(EventArgs e)
         {
@@ -206,28 +203,28 @@ namespace MonitorTEF
             var fade = new Timer { Interval = 16 };
             fade.Tick += (s, ev) =>
             {
-                if (Opacity < 0.95) Opacity += 0.07;
-                else { Opacity = 0.95; fade.Stop(); }
+                if (Opacity < 0.94) Opacity += 0.07;
+                else { Opacity = 0.94; fade.Stop(); }
             };
             fade.Start();
         }
 
         // ─────────────────────────────────────────────────────────────────
-        //  AÇÃO: CONFIRMAR
+        //  CONFIRMAR
         // ─────────────────────────────────────────────────────────────────
         private void BtnConfirmar_Click(object sender, EventArgs e)
         {
             LogService.Registrar(
                 _meio.Codigo, _meio.Nome, AcaoOperador.CONFIRMADO,
                 _meio.TempoOcioso, _meio.ToleranciaEfetivaPercent,
-                $"{_meio.PercentualMedia:F0}% da média");
+                $"{_meio.PercentualMedia:F0}% da media");
 
             ConfirmadoClick?.Invoke(this, EventArgs.Empty);
             FecharComFade();
         }
 
         // ─────────────────────────────────────────────────────────────────
-        //  AÇÃO: EM ANÁLISE
+        //  EM ANÁLISE
         // ─────────────────────────────────────────────────────────────────
         private void BtnAnalise_Click(object sender, EventArgs e)
         {
@@ -243,41 +240,34 @@ namespace MonitorTEF
             MudarParaAnalise();
         }
 
-        // ─────────────────────────────────────────────────────────────────
-        //  TRANSIÇÃO PARA ESTADO ANÁLISE
-        // ─────────────────────────────────────────────────────────────────
         private void MudarParaAnalise()
         {
-            // muda cores
             BackColor        = BgAnalise;
             _barra.BackColor = BarraAnalise;
 
-            // esconde tudo menos o label de contagem
             _lblNome.Visible      = false;
             _lblTempo.Visible     = false;
             _lblDetalhe.Visible   = false;
             _btnConfirmar.Visible = false;
             _btnAnalise.Visible   = false;
 
-            // mostra label compacto
-            _lblAnaliseInfo.Text    = $"🔍  {_meio.Nome}  —  em análise";
+            _lblAnaliseInfo.Text    = $"{_meio.Nome}  —  em analise";
             _lblAnaliseInfo.Visible = true;
 
-            // encolhe
-            Posicionar(LARGURA, ALTURA_ANALISE);
+            // encolhe e reposiciona
+            AtualizarPosicao();
 
-            // contagem regressiva (atualiza a cada 1s)
+            // contagem regressiva
             _timerContagem = new Timer { Interval = 1000 };
             _timerContagem.Tick += (s, ev) =>
             {
                 var r = _meio.TempoRestanteAnalise;
                 if (r <= TimeSpan.Zero) { _timerContagem.Stop(); return; }
                 _lblAnaliseInfo.Text =
-                    $"🔍  {_meio.Nome}  —  volta em {r.Minutes:D2}:{r.Seconds:D2}";
+                    $"{_meio.Nome}  —  {r.Minutes:D2}:{r.Seconds:D2}";
             };
             _timerContagem.Start();
 
-            // fecha automaticamente quando a supressão expirar
             int ms = Math.Max(500, (int)_meio.TempoRestanteAnalise.TotalMilliseconds);
             _timerAnalise = new Timer { Interval = ms };
             _timerAnalise.Tick += (s, ev) => { _timerAnalise.Stop(); FecharComFade(); };
@@ -306,7 +296,7 @@ namespace MonitorTEF
         // ─────────────────────────────────────────────────────────────────
         //  FORMATAÇÃO
         // ─────────────────────────────────────────────────────────────────
-        private static string FormatarTempoOcioso(TimeSpan ts)
+        private static string FormatarTempo(TimeSpan ts)
         {
             if (ts == TimeSpan.MaxValue) return "—";
             if (ts.TotalHours >= 1)
@@ -320,18 +310,17 @@ namespace MonitorTEF
         {
             if (min <= 0) return "—";
             if (min >= 60) return $"{(int)(min / 60)}h {(int)(min % 60):D2}min";
-            if (min >= 1)  return $"{min:F1} min";
+            if (min >= 1)  return $"{min:F1}min";
             return $"{(int)(min * 60)}s";
         }
 
-        // sem roubar foco
         protected override bool ShowWithoutActivation => true;
         protected override CreateParams CreateParams
         {
             get
             {
                 var cp = base.CreateParams;
-                cp.ExStyle |= 0x08000000; // WS_EX_NOACTIVATE
+                cp.ExStyle |= 0x08000000;
                 return cp;
             }
         }

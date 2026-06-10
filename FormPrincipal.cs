@@ -34,9 +34,48 @@ namespace MonitorTEF
         private int _intervaloSeg    = Config.IntervaloVerificacaoSegundos;
 
         // ── popups ativos por código de meio ──────────────────────────────
+        // slots 0..MAX_POPUPS-1: cada slot ocupa uma posição fixa na pilha
+        // PopupsAtivos: codigo → popup; Slots: slot → codigo (null = livre)
         private readonly Dictionary<string, FormAlerta> _popupsAtivos =
             new Dictionary<string, FormAlerta>();
+        private readonly string[] _slots = new string[4]; // MAX_POPUPS = 4
         private const int MAX_POPUPS = 4;
+
+        private int ObterSlotLivre()
+        {
+            for (int i = 0; i < _slots.Length; i++)
+                if (_slots[i] == null) return i;
+            return -1;
+        }
+
+        private void LiberarSlot(string codigo)
+        {
+            for (int i = 0; i < _slots.Length; i++)
+                if (_slots[i] == codigo) { _slots[i] = null; break; }
+            // reposicionar popups restantes para preencher lacunas
+            ReempilharPopups();
+        }
+
+        private void ReempilharPopups()
+        {
+            // compacta slots: sem lacunas, do 0 para cima
+            int prox = 0;
+            for (int i = 0; i < _slots.Length; i++)
+            {
+                if (_slots[i] == null) continue;
+                if (i != prox)
+                {
+                    _slots[prox] = _slots[i];
+                    _slots[i]    = null;
+                    if (_popupsAtivos.TryGetValue(_slots[prox], out var p))
+                    {
+                        p.SlotIndex = prox;
+                        p.AtualizarPosicao();
+                    }
+                }
+                prox++;
+            }
+        }
 
         // ─────────────────────────────────────────────────────────────────
         public FormPrincipal()
@@ -410,23 +449,26 @@ namespace MonitorTEF
         {
             foreach (var m in _meios)
             {
-                if (m.Status != StatusMeio.Critico)    continue;
-                if (m.AlertaDisparado)                 continue;
-                if (m.AnaliseAtiva)                    continue;
-                if (_popupsAtivos.Count >= MAX_POPUPS) break;
+                if (m.Status != StatusMeio.Critico)      continue;
+                if (m.AlertaDisparado)                   continue;
+                if (m.AnaliseAtiva)                      continue;
                 if (_popupsAtivos.ContainsKey(m.Codigo)) continue;
 
+                int slot = ObterSlotLivre();
+                if (slot < 0) break; // todos os slots ocupados
+
                 m.AlertaDisparado = true;
-                int offsetY = _popupsAtivos.Count * 112;
+                _slots[slot]      = m.Codigo;
 
                 var meioLocal = m;
-                var popup     = new FormAlerta(meioLocal, offsetY);
+                var popup     = new FormAlerta(meioLocal, slot);
 
                 popup.ConfirmadoClick += (s, e) =>
                 {
                     meioLocal.AlertaDisparado = false;
                     meioLocal.EmAnalise       = false;
                     _popupsAtivos.Remove(meioLocal.Codigo);
+                    LiberarSlot(meioLocal.Codigo);
                     AtualizarGrid();
                 };
 
@@ -445,6 +487,7 @@ namespace MonitorTEF
                         meioLocal.EmAnalise       = false;
                         meioLocal.AlertaDisparado = false;
                         _popupsAtivos.Remove(meioLocal.Codigo);
+                        LiberarSlot(meioLocal.Codigo);
                         AtualizarGrid();
                         ExecutarVerificacao();
                     };
@@ -452,7 +495,10 @@ namespace MonitorTEF
                 };
 
                 popup.FormClosed += (s, e) =>
+                {
                     _popupsAtivos.Remove(meioLocal.Codigo);
+                    LiberarSlot(meioLocal.Codigo);
+                };
 
                 _popupsAtivos[m.Codigo] = popup;
                 popup.Show();
