@@ -299,11 +299,10 @@ namespace MonitorTEF
             {
                 var meiosAtualizados = ApiService.ConsultarUltimasTransacoes(_periodoHoras);
 
-                // ── Primeiro: calcula métricas de TODOS os meios novos ──────────
-                foreach (var m in meiosAtualizados)
-                    m.CalcularMetricas(_periodoHoras);
+                // ── Métricas já calculadas pelo ApiService (replica processData) ──
+                // Não chama CalcularMetricas — os valores chegam prontos do servidor.
 
-                // ── Depois: faz o merge com o estado anterior ────────────────────
+                // ── Merge com o estado anterior ──────────────────────────────────
                 // Regra central: AlertaDisparado só é FALSE quando o meio
                 // ENTRA em Crítico pela primeira vez (UltimaTransacao mudou
                 // para pior, ou meio era Normal/Atenção e virou Crítico).
@@ -374,10 +373,7 @@ namespace MonitorTEF
                     }
                 }
 
-                // Injeta o meio sintético RC (agrega todos os meios [ RC ])
-                var meioRC = CriarMeioRedeCompras(meiosAtualizados);
-                if (meioRC != null)
-                    meiosAtualizados.Add(meioRC);
+                // RC já vem no resultado do ApiService — não precisa injetar aqui
 
                 _meios              = meiosAtualizados;
                 _proximaVerificacao = DateTime.Now.AddSeconds(_intervaloSeg);
@@ -564,8 +560,14 @@ namespace MonitorTEF
                 TotalDesfazimentos = totalDesf,
             };
 
-            // calcula métricas com base nos dados agregados
-            rc.CalcularMetricas(_periodoHoras);
+            // métricas calculadas localmente para o RC sintético do FormPrincipal
+            // (backup caso ApiService não traga o RC — normalmente não é chamado)
+            double periodoMin = _periodoHoras * 60.0;
+            double mediaRcLocal = totalTx > 0 ? periodoMin / totalTx : 0;
+            double tempoRcLocal = rc.UltimaTransacao.HasValue
+                ? (DateTime.Now - rc.UltimaTransacao.Value).TotalMinutes : 0;
+            double pctRcLocal   = mediaRcLocal > 0 ? tempoRcLocal / mediaRcLocal * 100 : 0;
+            rc.DefinirMetricasExternas(mediaRcLocal, tempoRcLocal, pctRcLocal);
 
             // sobrescreve status pela regra de negócio RC
             if (todosProblema)
@@ -705,7 +707,14 @@ namespace MonitorTEF
                 {
                     meio.ToleranciaIndividualPercent = dlg.ToleranciaPercent;
                     meio.AlertaDisparado             = false;
-                    meio.CalcularMetricas(_periodoHoras); // recalcula com nova tolerância
+                    // Recalcula só o status com base nas métricas já existentes
+                    // (as métricas de média/tempo não mudam, só a tolerância mudou)
+                    if (meio.PercentualMedia > meio.ToleranciaEfetivaPercent)
+                        meio.ForcarStatus(StatusMeio.Critico);
+                    else if (meio.PercentualMedia > 100)
+                        meio.ForcarStatus(StatusMeio.Atencao);
+                    else
+                        meio.ForcarStatus(StatusMeio.Ok);
                     AtualizarGrid();
                 }
             }

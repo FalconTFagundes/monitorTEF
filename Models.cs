@@ -44,9 +44,22 @@ namespace MonitorTEF
 
         /// <summary>
         /// Permite sobrescrever o Status calculado por CalcularMetricas.
-        /// Usado pelo meio sintético REDECOMPRAS.
         /// </summary>
         public void ForcarStatus(StatusMeio status) => Status = status;
+
+        /// <summary>
+        /// Define métricas vindas externamente (ApiService) sem recalcular.
+        /// Usado quando os dados já chegam processados do servidor.
+        /// </summary>
+        public void DefinirMetricasExternas(
+            double mediaIntervaloMinutos,
+            double tempoOciosoMinutos,
+            double percentualMedia)
+        {
+            MediaIntervaloMinutos = mediaIntervaloMinutos;
+            TempoOciosoMinutos    = tempoOciosoMinutos;
+            PercentualMedia       = percentualMedia;
+        }
 
         // ── Limite individual opcional (0 = usa tolerância global) ────
         // Continua existindo para casos onde o operador quer forçar
