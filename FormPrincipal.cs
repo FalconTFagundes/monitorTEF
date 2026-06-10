@@ -41,6 +41,10 @@ namespace MonitorTEF
         private readonly string[] _slots = new string[4]; // MAX_POPUPS = 4
         private const int MAX_POPUPS = 4;
 
+        // meios que sumiram automaticamente e aguardam reexibição em 5s
+        private readonly Dictionary<string, Timer> _reexibicaoPendente =
+            new Dictionary<string, Timer>();
+
         private int ObterSlotLivre()
         {
             for (int i = 0; i < _slots.Length; i++)
@@ -295,41 +299,79 @@ namespace MonitorTEF
             {
                 var meiosAtualizados = BancoService.ConsultarUltimasTransacoes(_periodoHoras);
 
+                // ── Primeiro: calcula métricas de TODOS os meios novos ──────────
+                foreach (var m in meiosAtualizados)
+                    m.CalcularMetricas(_periodoHoras);
+
+                // ── Depois: faz o merge com o estado anterior ────────────────────
+                // Regra central: AlertaDisparado só é FALSE quando o meio
+                // ENTRA em Crítico pela primeira vez (UltimaTransacao mudou
+                // para pior, ou meio era Normal/Atenção e virou Crítico).
+                // Se já estava Crítico com a mesma UltimaTransacao → mesmo
+                // evento, não dispara de novo.
                 foreach (var novo in meiosAtualizados)
                 {
                     var anterior = _meios.Find(m => m.Codigo == novo.Codigo);
-                    if (anterior == null) continue;
 
-                    // preserva tolerância individual configurada pelo operador
+                    if (anterior == null)
+                    {
+                        // Meio novo (primeira execução ou novo tipo no banco).
+                        // Se já está crítico na primeira leitura, marca como
+                        // já disparado — não mostra popup para estado pré-existente.
+                        if (novo.Status == StatusMeio.Critico)
+                            novo.AlertaDisparado = true;
+                        continue;
+                    }
+
+                    // Preserva configuração individual do operador
                     novo.ToleranciaIndividualPercent = anterior.ToleranciaIndividualPercent;
 
+                    // Preserva estado de análise
                     if (anterior.AnaliseAtiva)
                     {
                         novo.EmAnalise       = true;
                         novo.SuprimidoAte    = anterior.SuprimidoAte;
                         novo.AlertaDisparado = true;
+                        continue;
+                    }
+
+                    if (novo.Status == StatusMeio.Critico)
+                    {
+                        bool mesmaUltimaTx = novo.UltimaTransacao == anterior.UltimaTransacao;
+                        bool jaEraCritico  = anterior.Status == StatusMeio.Critico;
+
+                        if (jaEraCritico && mesmaUltimaTx)
+                        {
+                            // MESMO evento, MESMO status, MESMA última tx
+                            // → não é novidade, não dispara popup
+                            novo.AlertaDisparado = anterior.AlertaDisparado;
+
+                            // Cancela reexibição pendente se o popup ainda estava
+                            // aguardando os 5s (situação não mudou, sem necessidade)
+                            // — deixa correr, o handler já verifica Status na hora
+                        }
+                        else if (jaEraCritico && !mesmaUltimaTx)
+                        {
+                            // O meio transacionou e voltou a ficar crítico
+                            // → nova ocorrência, DISPARA novo alerta
+                            // Cancela qualquer reexibição pendente para não duplicar
+                            CancelarReexibicao(novo.Codigo);
+                            novo.AlertaDisparado = false;
+                        }
+                        else
+                        {
+                            // Mudou de Normal/Atenção/SemDados para Crítico
+                            // → DISPARA alerta
+                            CancelarReexibicao(novo.Codigo);
+                            novo.AlertaDisparado = false;
+                        }
                     }
                     else
                     {
-                        // Preserva AlertaDisparado enquanto o meio AINDA estiver crítico.
-                        // Só reseta quando o meio realmente voltar ao normal
-                        // (nova transação que derrubou o percentual abaixo da tolerância).
-                        // Isso evita re-disparar o popup a cada ciclo de polling.
-                        novo.AlertaDisparado = anterior.AlertaDisparado;
-                        // A flag será limpa em DispararAlertas/Confirmar/Análise
-                        // quando o Status deixar de ser Crítico.
+                        // Saiu do crítico → reseta e cancela pendências
+                        CancelarReexibicao(novo.Codigo);
+                        novo.AlertaDisparado = false;
                     }
-                }
-
-                // Calcula as métricas dinâmicas para cada meio
-                foreach (var m in meiosAtualizados)
-                {
-                    m.CalcularMetricas(_periodoHoras);
-
-                    // Se saiu do estado crítico (voltou a transacionar normalmente),
-                    // libera a flag para poder disparar alerta no próximo evento crítico
-                    if (m.Status != StatusMeio.Critico && !m.AnaliseAtiva)
-                        m.AlertaDisparado = false;
                 }
 
                 // Injeta o meio sintético RC (agrega todos os meios [ RC ])
@@ -461,6 +503,15 @@ namespace MonitorTEF
         // ─────────────────────────────────────────────────────────────────
         //  ALERTAS
         // ─────────────────────────────────────────────────────────────────
+        private void CancelarReexibicao(string codigo)
+        {
+            if (_reexibicaoPendente.TryGetValue(codigo, out var t))
+            {
+                t.Stop();
+                _reexibicaoPendente.Remove(codigo);
+            }
+        }
+
         // ─────────────────────────────────────────────────────────────────
         //  MEIO SINTÉTICO: REDECOMPRAS
         //  Agrega todos os meios com [ RC ] no nome.
@@ -589,6 +640,30 @@ namespace MonitorTEF
                         ExecutarVerificacao();
                     };
                     timerReat.Start();
+                };
+
+                popup.SumidoAutomaticamente += (s, e) =>
+                {
+                    // sumiu sem clique → reagenda para reexibir em 5s
+                    // AlertaDisparado permanece true; Timer reseta e dispara Show novamente
+                    var timerReex = new Timer { Interval = 5000 };
+                    _reexibicaoPendente[meioLocal.Codigo] = timerReex;
+                    timerReex.Tick += (ts, te) =>
+                    {
+                        timerReex.Stop();
+                        _reexibicaoPendente.Remove(meioLocal.Codigo);
+                        // só reexibe se o meio ainda estiver crítico e sem análise
+                        var mAtual = _meios.Find(x => x.Codigo == meioLocal.Codigo);
+                        if (mAtual != null
+                            && mAtual.Status == StatusMeio.Critico
+                            && !mAtual.AnaliseAtiva
+                            && !_popupsAtivos.ContainsKey(meioLocal.Codigo))
+                        {
+                            mAtual.AlertaDisparado = false; // permite redisparar
+                            DispararAlertas();
+                        }
+                    };
+                    timerReex.Start();
                 };
 
                 popup.FormClosed += (s, e) =>
