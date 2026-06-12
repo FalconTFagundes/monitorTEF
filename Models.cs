@@ -48,8 +48,7 @@ namespace MonitorTEF
         public void ForcarStatus(StatusMeio status) => Status = status;
 
         /// <summary>
-        /// Define métricas vindas externamente (ApiService) sem recalcular.
-        /// Usado quando os dados já chegam processados do servidor.
+        /// Define métricas calculadas externamente sem recalcular.
         /// </summary>
         public void DefinirMetricasExternas(
             double mediaIntervaloMinutos,

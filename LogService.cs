@@ -8,6 +8,12 @@ namespace MonitorTEF
     {
         private static readonly object _lock = new object();
 
+        /// <summary>
+        /// Nome do operador logado. Definido pelo FormPrincipal após login.
+        /// Usado nos logs em vez do Environment.UserName.
+        /// </summary>
+        public static string OperadorAtual { get; set; } = Environment.UserName;
+
         private static string CaminhoCompleto =>
             Path.Combine(Config.PastaLogRede, Config.NomeArquivoLog);
 
@@ -37,7 +43,7 @@ namespace MonitorTEF
 
                         sw.WriteLine(string.Join(";",
                             DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
-                            Environment.UserName,
+                            OperadorAtual,
                             Environment.MachineName,
                             codigoMeio,
                             Escapar(nomeMeio),

@@ -10,7 +10,19 @@ namespace MonitorTEF
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new FormPrincipal());
+
+            // Abre tela de login
+            using (var login = new FormLogin())
+            {
+                if (login.ShowDialog() != DialogResult.OK)
+                    return; // usuário fechou sem logar
+
+                // Login OK — abre o monitor com o nome do operador
+                Application.Run(new FormPrincipal(
+                    login.NomeUsuario,
+                    login.PrimeiroNome,
+                    login.CodigoUsuario));
+            }
         }
     }
 }

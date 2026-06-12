@@ -1,7 +1,7 @@
 {
-  "version": 4,
+  "version": 3,
   "targets": {
-    "net48": {
+    ".NETFramework,Version=v4.8": {
       "System.Data.SqlClient/4.8.6": {
         "type": "package",
         "frameworkAssemblies": [
@@ -31,7 +31,7 @@
         }
       }
     },
-    "net48/win-x86": {
+    ".NETFramework,Version=v4.8/win-x86": {
       "System.Data.SqlClient/4.8.6": {
         "type": "package",
         "frameworkAssemblies": [
@@ -141,7 +141,7 @@
     }
   },
   "projectFileDependencyGroups": {
-    "net48": [
+    ".NETFramework,Version=v4.8": [
       "System.Data.SqlClient >= 4.8.6"
     ]
   },
@@ -170,7 +170,6 @@
       },
       "frameworks": {
         "net48": {
-          "framework": "net48",
           "targetAlias": "net48",
           "projectReferences": {}
         }
@@ -189,7 +188,6 @@
     },
     "frameworks": {
       "net48": {
-        "framework": "net48",
         "targetAlias": "net48",
         "dependencies": {
           "System.Data.SqlClient": {

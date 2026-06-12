@@ -16,12 +16,6 @@ namespace MonitorTEF
         private DataGridView  _grid;
         private Panel         _painelRodape;
 
-        // config global
-        private NumericUpDown _nudPeriodoHoras;
-        private NumericUpDown _nudTolerancia;
-        private NumericUpDown _nudIntervaloSeg;
-        private Button        _btnSalvarConfig;
-
         // ── timers ────────────────────────────────────────────────────────
         private Timer    _timerPolling;
         private Timer    _timerClock;
@@ -32,6 +26,11 @@ namespace MonitorTEF
         private int _periodoHoras    = Config.PeriodoHistoricoHoras;
         private int _toleranciaPerc  = Config.ToleranciaGlobalPercent;
         private int _intervaloSeg    = Config.IntervaloVerificacaoSegundos;
+
+        // usuário logado
+        private string _nomeOperador     = "";
+        private string _primeiroNome     = "";
+        private string _codigoOperador   = "";
 
         // ── popups ativos por código de meio ──────────────────────────────
         // slots 0..MAX_POPUPS-1: cada slot ocupa uma posição fixa na pilha
@@ -82,8 +81,15 @@ namespace MonitorTEF
         }
 
         // ─────────────────────────────────────────────────────────────────
-        public FormPrincipal()
+        public FormPrincipal(string nomeCompleto, string primeiroNome, string codigo)
         {
+            _nomeOperador   = nomeCompleto;
+            _primeiroNome   = primeiroNome;
+            _codigoOperador = codigo;
+
+            // propaga para o LogService — todos os logs usam o nome logado
+            LogService.OperadorAtual = nomeCompleto;
+
             ConstruirInterface();
             IniciarPolling();
             ExecutarVerificacao();
@@ -126,6 +132,25 @@ namespace MonitorTEF
                 ForeColor = Color.FromArgb(180, 210, 255),
                 AutoSize  = true,
                 Location  = new Point(16, 40)
+            };
+
+            // nome do operador logado (canto direito do topo)
+            var lblOperador = new Label
+            {
+                Text      = $"● {_primeiroNome}",
+                Font      = new Font("Segoe UI", 8, FontStyle.Bold),
+                ForeColor = Color.FromArgb(120, 200, 120),
+                AutoSize  = true,
+                Anchor    = AnchorStyles.Top | AnchorStyles.Right,
+                Location  = new Point(10, 14),
+                BackColor = Color.Transparent
+            };
+            // posição final definida após resize
+            _painelTopo.Controls.Add(lblOperador);
+            _painelTopo.Resize += (s, e) =>
+            {
+                lblOperador.Location = new Point(
+                    _painelTopo.Width - lblOperador.Width - 170, 14);
             };
 
             _lblProxima = new Label
@@ -195,69 +220,29 @@ namespace MonitorTEF
 
             _grid.CellDoubleClick += Grid_CellDoubleClick;
 
-            // ── rodapé ───────────────────────────────────────────────────
+            // ── rodapé de status (somente leitura — config vem do servidor) ──
             _painelRodape = new Panel
             {
                 Dock      = DockStyle.Bottom,
-                Height    = 56,
+                Height    = 34,
                 BackColor = Color.FromArgb(235, 238, 245),
                 Padding   = new Padding(14, 0, 14, 0)
             };
 
-            // Período histórico
-            AdicionarLabel(_painelRodape, "Período histórico (h):", 14, 18);
-            _nudPeriodoHoras = AdicionarNud(_painelRodape, 1, 168, _periodoHoras, 56, 135, 15);
-
-            // Tolerância
-            AdicionarLabel(_painelRodape, "Tolerância (%):", 208, 18);
-            _nudTolerancia   = AdicionarNud(_painelRodape, 100, 500, _toleranciaPerc, 68, 308, 15);
-
-            // Intervalo de polling
-            AdicionarLabel(_painelRodape, "Verificar a cada (seg):", 394, 18);
-            _nudIntervaloSeg = AdicionarNud(_painelRodape, 10, 3600, _intervaloSeg, 68, 554, 15);
-
-            // Botão Aplicar
-            _btnSalvarConfig = new Button
-            {
-                Text      = "Aplicar",
-                Font      = new Font("Segoe UI", 9, FontStyle.Bold),
-                BackColor = Color.FromArgb(20, 60, 120),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Size      = new Size(80, 26),
-                Location  = new Point(636, 15),
-                Cursor    = Cursors.Hand
-            };
-            _btnSalvarConfig.FlatAppearance.BorderSize = 0;
-            _btnSalvarConfig.Click += BtnSalvarConfig_Click;
-
             var lblDica = new Label
             {
-                Text      = $"Duplo clique → tolerância individual por meio  |  Fonte: {Config.UrlServidor}",
+                Text      = $"Duplo clique → tolerância individual por meio  |  {Config.Servidor}/{Config.Banco}",
                 ForeColor = Color.Gray,
                 Font      = new Font("Segoe UI", 8),
                 AutoSize  = true,
-                Location  = new Point(730, 20)
+                Location  = new Point(14, 10)
             };
 
-            _painelRodape.Controls.AddRange(new Control[] { _btnSalvarConfig, lblDica });
-
+            _painelRodape.Controls.Add(lblDica);
             Controls.AddRange(new Control[] { _grid, _painelTopo, _painelRodape });
         }
 
-        private static Label AdicionarLabel(Panel p, string texto, int x, int y)
-        {
-            var l = new Label { Text = texto, AutoSize = true, Location = new Point(x, y) };
-            p.Controls.Add(l);
-            return l;
-        }
 
-        private static NumericUpDown AdicionarNud(Panel p, int min, int max, int val, int w, int x, int y)
-        {
-            var n = new NumericUpDown { Minimum = min, Maximum = max, Value = val, Width = w, Location = new Point(x, y) };
-            p.Controls.Add(n);
-            return n;
-        }
 
         private void PosicionarControlesTopo()
         {
@@ -297,10 +282,11 @@ namespace MonitorTEF
 
             try
             {
-                var meiosAtualizados = ApiService.ConsultarUltimasTransacoes(_periodoHoras);
+                var meiosAtualizados = BancoService.ConsultarUltimasTransacoes(_periodoHoras);
 
-                // ── Métricas já calculadas pelo ApiService (replica processData) ──
-                // Não chama CalcularMetricas — os valores chegam prontos do servidor.
+                // ── Calcula métricas dinâmicas para cada meio ─────────────────────
+                foreach (var m in meiosAtualizados)
+                    m.CalcularMetricas(_periodoHoras);
 
                 // ── Merge com o estado anterior ──────────────────────────────────
                 // Regra central: AlertaDisparado só é FALSE quando o meio
@@ -373,7 +359,7 @@ namespace MonitorTEF
                     }
                 }
 
-                // RC já vem no resultado do ApiService — não precisa injetar aqui
+                // RC já está na lista retornada pelo BancoService
 
                 _meios              = meiosAtualizados;
                 _proximaVerificacao = DateTime.Now.AddSeconds(_intervaloSeg);
@@ -385,20 +371,19 @@ namespace MonitorTEF
                 _lblStatus.Text =
                     $"Última atualização: {DateTime.Now:HH:mm:ss}  |  " +
                     $"{_meios.Count} meio(s)  |  " +
-                    (criticos > 0 ? $"⚠ {criticos} em alerta" : "Tudo normal");
+                    $"Período: {_periodoHoras}h  |  Tolerância: {_toleranciaPerc}%  |  " +
+                    (criticos > 0 ? $"⚠ {criticos} em alerta" : "✔ Tudo normal");
             }
-            catch (System.Net.WebException ex)
-                when (ex.Status == System.Net.WebExceptionStatus.ConnectFailure
-                   || ex.Status == System.Net.WebExceptionStatus.Timeout)
+            catch (System.Data.SqlClient.SqlException ex)
             {
-                // Servidor Python offline ou inacessível
-                _lblStatus.Text = $"⚠ Servidor offline — {Config.UrlServidor}";
-                // Não abre MessageBox para não travar o operador; o status já indica
+                _lblStatus.Text = $"⚠ Erro SQL: {ex.Message}";
+                MessageBox.Show($"Erro ao consultar o banco de dados:\n\n{ex.Message}",
+                    "Erro de Conexão", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             catch (Exception ex)
             {
                 _lblStatus.Text = $"Erro: {ex.Message}";
-                MessageBox.Show($"Erro ao consultar o servidor:\n\n{ex.Message}",
+                MessageBox.Show($"Erro inesperado:\n\n{ex.Message}",
                     "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -561,7 +546,7 @@ namespace MonitorTEF
             };
 
             // métricas calculadas localmente para o RC sintético do FormPrincipal
-            // (backup caso ApiService não traga o RC — normalmente não é chamado)
+            // (backup — RC calculado pelo FormPrincipal caso não venha do banco)
             double periodoMin = _periodoHoras * 60.0;
             double mediaRcLocal = totalTx > 0 ? periodoMin / totalTx : 0;
             double tempoRcLocal = rc.UltimaTransacao.HasValue
@@ -720,34 +705,7 @@ namespace MonitorTEF
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────
-        //  APLICAR CONFIGURAÇÕES GLOBAIS
-        // ─────────────────────────────────────────────────────────────────
-        private void BtnSalvarConfig_Click(object sender, EventArgs e)
-        {
-            _periodoHoras   = (int)_nudPeriodoHoras.Value;
-            _toleranciaPerc = (int)_nudTolerancia.Value;
-            _intervaloSeg   = (int)_nudIntervaloSeg.Value;
 
-            _timerPolling.Interval = _intervaloSeg * 1000;
-
-            // reseta alertas e recalcula com novos parâmetros
-            foreach (var m in _meios)
-            {
-                if (m.ToleranciaIndividualPercent == 0) // só os que usam global
-                    m.AlertaDisparado = false;
-            }
-
-            // força verificação imediata com novo período
-            ExecutarVerificacao();
-
-            MessageBox.Show(
-                $"Configurações aplicadas!\n\n" +
-                $"Período: {_periodoHoras}h  |  " +
-                $"Tolerância: {_toleranciaPerc}%  |  " +
-                $"Polling: {_intervaloSeg}s",
-                "Monitor TEF", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
 
         // ─────────────────────────────────────────────────────────────────
         //  UTILITÁRIOS
